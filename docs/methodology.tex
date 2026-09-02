@@ -1,0 +1,254 @@
+\documentclass[11pt,a4paper]{ctexart}
+\usepackage[margin=2.35cm]{geometry}
+\usepackage{amsmath,amssymb,bm,booktabs,array,longtable}
+\usepackage{xcolor,hyperref,listings,graphicx}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue}
+\definecolor{codegray}{RGB}{245,247,250}
+\lstset{basicstyle=\ttfamily\small,backgroundcolor=\color{codegray},frame=single,breaklines=true}
+
+\title{AquaNav-RL：海流扰动下AUV强化学习导航基准\\方法、公式与代码对应说明}
+\author{AquaNav-RL Contributors}
+\date{Version 0.1.0}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+AquaNav-RL是一个轻量、可复现的自主水下航行器（AUV）导航基准。项目公开版关注三自由度平面动力学、空间与时间变化海流、障碍物、传统LOS/PID控制、强化学习接口和统一评估。其目的不是替代高保真水下仿真器，而是提供一个依赖少、公式透明、容易修改的算法实验底座。本文逐项说明数学模型、马尔可夫决策过程、奖励函数、软件结构和实验协议，并给出公式与源代码文件的对应关系。
+\end{abstract}
+
+\tableofcontents
+
+\section{项目边界与设计目标}
+
+公开版解决的问题是：给定起点、终点、圆形障碍物和海流场，控制AUV在有限时间内到达目标，同时降低碰撞和控制能耗。项目采用三自由度模型，状态包含平面位置、艏向角、纵荡速度、横荡速度与艏摇角速度。这个层次足以研究导航、抗扰动、奖励设计与强化学习训练，但不应被解释为某一真实AUV的完整数字孪生。
+
+项目刻意不包含可能形成后续研究或专利核心的模块，例如海流不确定度驱动的自适应控制频率、安全投影层、学习型海流估计器、声学通信调度和多AUV协同策略。这样可以公开基础设施，同时保持后续研究空间。
+
+\section{坐标、状态与控制输入}
+
+惯性坐标系中的位姿定义为
+\begin{equation}
+\bm\eta=[x,y,\psi]^\top,
+\end{equation}
+其中$x,y$表示平面位置，$\psi$表示艏向角。体坐标系速度定义为
+\begin{equation}
+\bm\nu=[u,v,r]^\top,
+\end{equation}
+其中$u$为纵荡速度，$v$为横荡速度，$r$为艏摇角速度。完整状态为
+\begin{equation}
+\bm s=[\bm\eta^\top,\bm\nu^\top]^\top\in\mathbb R^6.
+\end{equation}
+
+归一化动作$\bm a\in[-1,1]^3$通过执行器上限映射为实际广义力：
+\begin{equation}
+\bm\tau=\operatorname{diag}(\tau_{u,\max},\tau_{v,\max},\tau_{r,\max})\bm a.
+\end{equation}
+三个分量分别对应纵荡力、横荡力与艏摇力矩。该模型相当于一个平面全驱动AUV，便于将注意力集中在海流与决策算法上。
+
+\section{运动学与动力学}
+
+\subsection{运动学}
+
+体坐标系到惯性坐标系的旋转矩阵为
+\begin{equation}
+\bm R(\psi)=
+\begin{bmatrix}
+\cos\psi&-\sin\psi\\
+\sin\psi& \cos\psi
+\end{bmatrix}.
+\end{equation}
+运动学方程为
+\begin{equation}
+\dot{\bm\eta}=\bm J(\psi)\bm\nu,
+\qquad
+\bm J(\psi)=
+\begin{bmatrix}
+\cos\psi&-\sin\psi&0\\
+\sin\psi& \cos\psi&0\\
+0&0&1
+\end{bmatrix}.
+\end{equation}
+
+\subsection{相对水速度}
+
+海流模型返回惯性坐标系速度$\bm v_c^n=[v_{c,x}^n,v_{c,y}^n]^\top$。将其转到体坐标系：
+\begin{equation}
+\bm v_c^b=\bm R^\top(\psi)\bm v_c^n.
+\end{equation}
+流体作用取决于AUV相对水体的速度：
+\begin{equation}
+\bm\nu_r=\bm\nu-
+\begin{bmatrix}
+\bm v_c^b\\0
+\end{bmatrix}.
+\end{equation}
+这一区分很重要：位置变化由对地速度$\bm\nu$决定，而阻尼与科氏项由相对水速度$\bm\nu_r$决定。
+
+\subsection{动力学}
+
+三自由度动力学写为
+\begin{equation}
+\bm M\dot{\bm\nu}+\bm C(\bm\nu_r)\bm\nu_r+
+\bm D(\bm\nu_r)\bm\nu_r=\bm\tau.
+\end{equation}
+质量与附加质量矩阵采用对角形式：
+\begin{equation}
+\bm M=\operatorname{diag}(m-X_{\dot u},m-Y_{\dot v},I_z-N_{\dot r}).
+\end{equation}
+代码中配置项以正的附加质量幅值保存，因此直接与刚体质量相加。科氏矩阵采用
+\begin{equation}
+\bm C(\bm\nu_r)=
+\begin{bmatrix}
+0&0&-m_yv_r\\
+0&0&m_xu_r\\
+m_yv_r&-m_xu_r&0
+\end{bmatrix}.
+\end{equation}
+阻尼同时包含线性和二次项：
+\begin{equation}
+\bm D(\bm\nu_r)=\operatorname{diag}
+\left(d_i+q_i|\nu_{r,i}|\right).
+\end{equation}
+因此加速度为
+\begin{equation}
+\dot{\bm\nu}=\bm M^{-1}
+\left[\bm\tau-\bm C(\bm\nu_r)\bm\nu_r-
+\bm D(\bm\nu_r)\bm\nu_r\right].
+\end{equation}
+源代码对应\texttt{aquanav/dynamics.py}。数值积分使用四阶Runge--Kutta方法，默认步长为$0.1\,\mathrm{s}$。
+
+\section{海流模型}
+
+\subsection{均匀海流}
+速度大小$V$与方向$\theta_c$固定：
+\begin{equation}
+\bm v_c=V[\cos\theta_c,\sin\theta_c]^\top.
+\end{equation}
+
+\subsection{涡旋海流}
+设涡旋中心为$\bm c$，位置偏差$\bm d=\bm p-\bm c$，半径$\rho=\|\bm d\|_2$，核心尺度为$R$。切向海流定义为
+\begin{equation}
+\bm v_c(\bm p)=V\frac{2\rho R}{\rho^2+R^2}
+\frac{[-d_y,d_x]^\top}{\rho}.
+\end{equation}
+该剖面在中心附近趋于零，在$\rho=R$附近达到标称速度，并在远场衰减，避免中心奇点和无限远恒定旋转。
+
+\subsection{时变海流}
+时变模型令相位
+\begin{equation}
+\phi(t,x)=\frac{2\pi t}{T}+0.25\sin(0.16x),
+\end{equation}
+并使用随时间变化的幅值
+\begin{equation}
+A(t)=V[0.7+0.3\sin(0.5\cdot2\pi t/T)].
+\end{equation}
+海流为$\bm v_c=A(t)[\cos\phi,\sin\phi]^\top$。上述模型均位于\texttt{aquanav/currents.py}。
+
+\section{导航任务的MDP表示}
+
+\subsection{观测空间}
+
+强化学习观测为
+\begin{equation}
+\bm o_t=[\Delta x/W,\Delta y/W,\cos\psi,\sin\psi,
+u/u_{\max},v/v_{\max},r/r_{\max},
+v_{c,x}^b,v_{c,y}^b,d/(2W)].
+\end{equation}
+其中$W$为世界边界尺度，$d$为目标距离。用$\sin\psi$与$\cos\psi$代替直接使用艏向角，避免$-\pi$与$\pi$连接处的数值不连续。公开版直接提供当前海流观测，便于先验证控制策略；后续研究可将它改为带噪测量或隐藏变量。
+
+\subsection{动作空间}
+
+动作空间为$[-1,1]^3$。环境内部负责裁剪并映射到物理执行器范围。统一的无量纲动作使不同AUV参数可以共享算法接口。
+
+\subsection{奖励函数}
+
+设$d_t$为当前目标距离，奖励为
+\begin{equation}
+r_t=w_p(d_{t-1}-d_t)-w_t-w_e\|\bm a_t\|_2^2
++R_g\mathbb I_{\mathrm{goal}}-R_c\mathbb I_{\mathrm{failure}}.
+\end{equation}
+各项含义如下：
+\begin{itemize}
+  \item 距离差$d_{t-1}-d_t$提供稠密进度信号；
+  \item 时间惩罚$w_t$鼓励尽快完成任务；
+  \item 动作平方项近似衡量控制能耗并抑制无意义的大动作；
+  \item 到达奖励$R_g$强化任务完成；
+  \item 碰撞或越界惩罚$R_c$表示任务失败。
+\end{itemize}
+终止条件为到达目标、碰撞或越界；达到最大步数时截断。
+
+\section{LOS/PID基线}
+
+目标艏向角为
+\begin{equation}
+\psi_d=\operatorname{atan2}(y_g-y,x_g-x),
+\qquad e_\psi=\operatorname{wrap}(\psi_d-\psi).
+\end{equation}
+当艏向误差较大时降低前进速度：
+\begin{equation}
+u_d=u_{\mathrm{cruise}}\max(0,\cos e_\psi).
+\end{equation}
+艏摇动作由PID产生：
+\begin{equation}
+a_r=\operatorname{clip}
+\left(K_pe_\psi+K_i\int e_\psi dt+K_d\dot e_\psi,-1,1\right).
+\end{equation}
+该控制器用于验证动力学和建立透明基线，不承担全局避障最优性。代码位于\texttt{aquanav/controllers.py}。
+
+\section{评估指标与实验协议}
+
+路径长度定义为
+\begin{equation}
+L=\sum_{t=1}^{T}\|\bm p_t-\bm p_{t-1}\|_2.
+\end{equation}
+控制能耗代理为
+\begin{equation}
+E_a=\Delta t\sum_{t=0}^{T-1}\|\bm a_t\|_2^2.
+\end{equation}
+它不是电池系统的真实焦耳能耗，但适合在执行器上限一致时比较策略。正式实验还应报告成功率、碰撞率、完成时间、最终目标距离，以及多随机种子的均值和标准差。
+
+为了避免选择性报告，建议预先固定测试场景、海流参数与随机种子。训练期间的域随机化场景不得与最终测试集合混用。失败轨迹应保留在统计中，不应只计算成功任务的平均路径长度。
+
+\section{代码与公式对应关系}
+
+\begin{longtable}{p{0.30\textwidth}p{0.62\textwidth}}
+\toprule
+文件 & 责任\\
+\midrule
+\texttt{config.py} & 物理参数、任务参数、障碍物和奖励权重\\
+\texttt{currents.py} & 均匀、涡旋和时变海流方程\\
+\texttt{dynamics.py} & 相对水速度、科氏项、阻尼、加速度和RK4积分\\
+\texttt{environment.py} & 观测、奖励、碰撞检测和终止逻辑\\
+\texttt{gym\_env.py} & Gymnasium的动作与观测空间适配\\
+\texttt{controllers.py} & LOS/PID与随机控制器\\
+\texttt{evaluation.py} & 轨迹采集、路径长度、能耗和CSV输出\\
+\texttt{visualization.py} & 海流矢量、轨迹、指标柱状图和GIF\\
+\texttt{train\_ppo.py} & Stable-Baselines3 PPO训练配置\\
+\bottomrule
+\end{longtable}
+
+\section{运行方式}
+
+基础演示只需要NumPy与Matplotlib：
+\begin{lstlisting}[language=bash]
+python -m pip install -e .
+python main.py
+python main.py --currents vortex --animate
+\end{lstlisting}
+
+强化学习为可选依赖：
+\begin{lstlisting}[language=bash]
+python -m pip install -e '.[rl]'
+python -m aquanav.train_ppo --steps 300000 --current vortex
+\end{lstlisting}
+
+\section{可以公开扩展的方向}
+
+适合公开贡献的内容包括更多海流场、传感器噪声、固定评测地图、传统路径规划器、不同强化学习基线、参数辨识示例和单元测试。可能涉及专利的新机制应在首次公开前完成现有技术检索和专利申请，尤其不要在公开Issue、README、提交记录或演示视频中提前描述完整技术流程。
+
+\section{模型限制}
+
+当前模型没有升沉、横摇和纵摇，不包含真实推进器布局、推进器死区、声呐回波、压力传感器、海床地形和声学通信。因而它适合算法原型与对照实验，但不能直接支持真实海试安全性结论。若未来面向具体BlueROV2或REMUS平台，应重新辨识质量、附加质量、阻尼和推进器映射，并使用ROS~2/HIL或高保真仿真进行第二阶段验证。
+
+\end{document}
+
