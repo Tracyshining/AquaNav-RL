@@ -63,7 +63,7 @@ class AUVNavigationEnv:
         out_of_bounds = np.any(np.abs(self.state[:2]) > self.config.world_size)
         success = distance <= self.config.goal_radius
         terminated = bool(collision or out_of_bounds or success)
-        truncated = self.steps >= self.config.max_steps
+        truncated = bool(self.steps >= self.config.max_steps and not terminated)
 
         reward = (
             self.config.reward_progress * progress
@@ -73,7 +73,7 @@ class AUVNavigationEnv:
             - self.config.reward_collision * float(collision or out_of_bounds)
         )
         return self._observation(), reward, terminated, truncated, self._info(
-            success, collision or out_of_bounds
+            success, collision, bool(out_of_bounds)
         )
 
     def with_current(self, mode: str) -> "AUVNavigationEnv":
@@ -112,10 +112,11 @@ class AUVNavigationEnv:
                 return True
         return False
 
-    def _info(self, success: bool, collision: bool) -> dict:
+    def _info(self, success: bool, collision: bool, out_of_bounds: bool = False) -> dict:
         return {
             "success": success,
             "collision": collision,
+            "out_of_bounds": out_of_bounds,
             "distance_to_goal": self.distance_to_goal,
             "time": self.time,
             "state": self.state.copy(),

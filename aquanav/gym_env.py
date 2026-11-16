@@ -1,3 +1,4 @@
+"""Gymnasium wrapper used by vanilla Stable-Baselines3 PPO."""
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
@@ -23,9 +24,12 @@ class GymnasiumAUVEnv(gym.Env):
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
+        # Gymnasium's seeded RNG stays live across episodes. In the source
+        # implementation, core.reset(seed=None) created a new unseeded RNG,
+        # making training randomization non-reproducible after the first reset.
+        episode_seed = int(self.np_random.integers(0, 2**32 - 1))
         randomize = bool((options or {}).get("randomize", True))
-        return self.core.reset(seed=seed, randomize=randomize)
+        return self.core.reset(seed=episode_seed, randomize=randomize)
 
     def step(self, action):
         return self.core.step(action)
-

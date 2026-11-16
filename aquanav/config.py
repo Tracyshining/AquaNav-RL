@@ -30,7 +30,7 @@ class EnvConfig:
     vehicle_radius: float = 0.35
     start: tuple[float, float, float] = (-10.0, -8.0, 0.0)
     goal: tuple[float, float] = (10.0, 8.0)
-    current_mode: str = "vortex"
+    current_mode: str = "none"
     current_strength: float = 0.55
     observation_noise: float = 0.0
     reward_progress: float = 5.0
