@@ -1,7 +1,7 @@
 # AquaNav-RL
 
 AquaNav-RL is a lightweight and reproducible benchmark for autonomous
-underwater vehicle (AUV) navigation in still water and uniform
+underwater vehicle (AUV) navigation under spatially and temporally varying
 ocean currents. The core simulator depends only on NumPy and Matplotlib. A
 Gymnasium adapter and Stable-Baselines3 PPO training entry point are available
 as optional dependencies.
@@ -24,18 +24,17 @@ planar 3-DOF baseline and is intended to grow toward spatial 5-DOF environments,
 giving future students and researchers a clearer path to start, understand,
 and extend AUV navigation research.
 
-![Default benchmark](result/seed_7/trajectories.png)
+![PPO navigation trajectory in a uniform current](assets/trajectory.gif)
 
 ## What is included
 
 - nonlinear planar 3-DOF AUV dynamics;
-- uniform and zero-current fields;
+- uniform, vortex, oscillating, and zero-current fields;
 - configurable circular obstacles, observation noise, and mission geometry;
 - a plain Python environment and an optional Gymnasium adapter;
-- independently trained PPO policies for the two current scenarios;
+- independently trained PPO policies for no-current and uniform-current scenarios;
 - an optional PPO training script;
 - trajectory, current-field, energy, and path-length visualization;
-- deterministic evaluation and CSV export.
 
 This public version is a benchmark and educational implementation. It does not
 contain adaptive control-frequency selection, safety projection, learned ocean
@@ -104,37 +103,48 @@ AquaNav-RL/
 
 ## Vehicle model
 
-The state is split into inertial pose and body-frame velocity:
+The inertial pose and body-frame velocity are defined as
 
 $$
-\boldsymbol{\eta}=[x,y,\psi]^\top,\qquad
-\boldsymbol{\nu}=[u,v,r]^\top.
+\boldsymbol{\eta}=[x,y,\psi]^\top,\qquad \boldsymbol{\nu}=[u,v,r]^\top.
 $$
 
-The kinematics and dynamics are
+where $x$ and $y$ represent the inertial position, $\psi$ is the heading angle,
+and $u$, $v$, and $r$ denote the surge velocity, sway velocity, and yaw rate,
+respectively. The superscript $\top$ denotes the transpose.
+
+The kinematics are formulated as
 
 $$
-\dot{\boldsymbol{\eta}}=
-\mathbf J(\psi)\boldsymbol{\nu},
+\dot{\boldsymbol{\eta}}=\mathbf J(\psi)\cdot\boldsymbol{\nu},
 $$
 
-$$
-\mathbf M\dot{\boldsymbol{\nu}}+
-\mathbf C(\boldsymbol{\nu}_r)\boldsymbol{\nu}_r+
-\mathbf D(\boldsymbol{\nu}_r)\boldsymbol{\nu}_r
-=\boldsymbol{\tau}.
-$$
+where $\dot{\boldsymbol{\eta}}$ represents the time derivative of the inertial
+pose, and $\mathbf J(\psi)$ is the transformation matrix from body-frame
+velocity to inertial pose rate.
 
-Here, $\boldsymbol{\nu}_r$ is the velocity relative to water. If the inertial
-current velocity is $\mathbf v_c^n$, then
+The dynamics are formulated as
 
 $$
-\boldsymbol{\nu}_r=
-\boldsymbol{\nu}-
-\begin{bmatrix}
-\mathbf R^\top(\psi)\mathbf v_c^n\\0
-\end{bmatrix}.
+\mathbf M\cdot\dot{\boldsymbol{\nu}}+\mathbf C(\boldsymbol{\nu}_r)\cdot\boldsymbol{\nu}_r+\mathbf D(\boldsymbol{\nu}_r)\cdot\boldsymbol{\nu}_r=\boldsymbol{\tau}.
 $$
+
+where $\mathbf M$ is the mass and added-mass matrix, $\dot{\boldsymbol{\nu}}$
+represents the body-frame acceleration, $\mathbf C$ is the Coriolis and
+centripetal matrix, and $\mathbf D$ is the damping matrix. The vector
+$\boldsymbol{\nu}_r$ represents the velocity relative to water, while
+$\boldsymbol{\tau}$ denotes the applied forces and yaw moment.
+
+The velocity relative to water is defined as
+
+$$
+\boldsymbol{\nu}_r=\boldsymbol{\nu}-\begin{bmatrix}\mathbf R^\top(\psi)\cdot\mathbf v_c^n\\0\end{bmatrix}.
+$$
+
+where $\mathbf v_c^n$ represents the inertial-frame current velocity, and
+$\mathbf R(\psi)$ is the planar rotation matrix from the body frame to the
+inertial frame. The zero entry represents the absence of a yaw-rate component
+in the current velocity.
 
 The action $\mathbf a\in[-1,1]^3$ is converted into surge force, sway force,
 and yaw moment using the configured actuator limits. Nonlinear damping makes
@@ -143,37 +153,74 @@ Runge--Kutta at the default interval $\Delta t=0.1$ s.
 
 ## Current fields
 
-The uniform field uses
+The vortex field centered at $\mathbf c$ is defined as
 
 $$
-\mathbf v_c(\mathbf p,t)=V[\cos\theta,\sin\theta]^\top.
+\mathbf v_c(\mathbf p)=V\cdot\frac{2 \rho R}{\rho^2+R^2}\cdot\frac{[-d_y,d_x]^\top}{\rho}.
 $$
 
-Its velocity is constant in space and time, with default strength
-$V=0.55$ m/s and direction $\theta=25^\circ$. The zero-current field returns
-zero velocity.
+where $\mathbf p$ represents the position, $\mathbf c$ is the vortex center,
+and $\mathbf v_c(\mathbf p)$ denotes the current velocity at that position.
+The parameter $V$ is the nominal current strength, $R$ is the core radius,
+and $\rho$ represents the distance from the vortex center. The terms $d_x$
+and $d_y$ are the components of the displacement vector $\mathbf d$.
+
+The displacement from the vortex center is defined as
+
+$$
+\mathbf d=\mathbf p-\mathbf c.
+$$
+
+where $\mathbf d$ represents the displacement vector from the vortex center
+$\mathbf c$ to the position $\mathbf p$.
+
+The distance from the vortex center is defined as
+
+$$
+\rho=\|\mathbf d\|.
+$$
+
+where $\rho$ represents the radial distance, and $\|\mathbf d\|$ is the
+Euclidean norm of the displacement vector.
+
+Its velocity approaches zero at the center, reaches its nominal strength near
+the core radius $R$, and decays away from the core. The oscillating field adds
+time-dependent direction and position-dependent phase, providing a simple
+non-stationary disturbance for robustness experiments.
 
 ## Navigation task
 
-At step $t$, the observation is
+At each time step $t$, the observation vector is defined as
 
 $$
-\mathbf o_t=
-[\Delta x/W,\Delta y/W,\cos\psi,\sin\psi,
-u/u_{\max},v/v_{\max},r/r_{\max},v_{c,x}^b,v_{c,y}^b,d/(2W)].
+\mathbf o_t=\left[\frac{\Delta x}{W},\frac{\Delta y}{W},\cos\psi,\sin\psi,\frac{u}{u_{\max}},\frac{v}{v_{\max}},\frac{r}{r_{\max}},v_{c,x}^b,v_{c,y}^b,\frac{d}{2 W}\right].
 $$
 
-The use of $\cos\psi$ and $\sin\psi$ avoids a discontinuity at $-\pi$ and
-$\pi$. The current is represented in the body frame so that it has a direct
-physical relationship with vehicle-relative velocity.
+where $\Delta x$ and $\Delta y$ represent the relative position of the goal,
+$W$ is the workspace scale, and $u_{\max}$, $v_{\max}$, and $r_{\max}$ are the
+velocity normalization limits. The terms $v_{c,x}^b$ and $v_{c,y}^b$ denote
+the body-frame current velocity components, while $d$ represents the distance
+to the goal.
 
-The reward is
+The heading angle is represented by $\cos\psi$ and $\sin\psi$ to maintain
+continuity across the angular boundary. The body-frame current components
+provide information about the disturbance relative to the vehicle orientation.
+
+The reward function is formulated as
 
 $$
-r_t=w_p(d_{t-1}-d_t)-w_t-w_e\|\mathbf a_t\|_2^2
-+R_g\mathbb{1}_{\mathrm{goal}}
--R_c\mathbb{1}_{\mathrm{collision}\,\lor\,\mathrm{out\_of\_bounds}}.
+r_t=w_p\cdot(d_{t-1}-d_t)-w_t-w_e\cdot\|\mathbf a_t\|^2+R_g\cdot\mathbb{I}_{\mathrm{goal}}-R_c\cdot\mathbb{I}_{\mathrm{failure}}.
 $$
+
+where $r_t$ represents the reward at time step $t$, $d_{t-1}$ and $d_t$ are
+the distances to the goal at consecutive time steps, and $\mathbf a_t$ is
+the normalized control action. The parameters $w_p$, $w_t$, and $w_e$ denote
+the progress weight, per-step time penalty, and control-effort penalty weight,
+respectively. The parameter $R_g$ is the goal reward, and $R_c$ is the failure
+penalty. The indicator $\mathbb{I}_{\mathrm{goal}}$ equals one when the goal
+is reached, while $\mathbb{I}_{\mathrm{failure}}$ equals one when a collision
+occurs or the vehicle leaves the workspace. Each indicator is zero otherwise,
+and $\|\cdot\|$ denotes the Euclidean norm.
 
 Progress provides a dense learning signal, while the energy term discourages
 unnecessary thrust. A rollout ends after reaching the goal, colliding, leaving
@@ -181,19 +228,22 @@ the workspace, or exhausting the step budget.
 
 ## Baselines and evaluation
 
-A reference LOS/PID controller points the vehicle toward the goal and reduces
-forward speed when its heading error is large:
+The no-current and uniform-current scenarios use independently trained
+Stable-Baselines3 PPO policies with `MlpPolicy`. During deterministic
+evaluation, the normalized control action is formulated as
 
 $$
-u_d=u_{\mathrm{cruise}}\max(0,\cos e_\psi),
+\mathbf a_t=\operatorname{clip}\left(\boldsymbol{\mu}_{\theta}(\mathbf o_t),-1,1\right).
 $$
 
-$$
-a_r=\operatorname{clip}\left(K_pe_\psi+K_i\int e_\psi\,dt+K_d\dot{e}_\psi,-1,1\right).
-$$
+where $\mathbf a_t$ represents the normalized surge, sway, and yaw control
+action, $\mathbf o_t$ is the observation vector, and $\boldsymbol{\mu}_{\theta}$
+denotes the mean action of the PPO policy with learned parameters $\theta$.
+The function $\operatorname{clip}(\cdot,-1,1)$ limits each action component
+to the interval $[-1,1]$.
 
-These reference equations are not implemented in this version. Evaluation
-uses the independently trained PPO policies. New algorithms should be
+Evaluation uses the saved `best_model.zip` checkpoint by default and applies
+deterministic actions to held-out episode seeds. New algorithms should be
 evaluated with repeated seeds and report:
 
 - mission success and collision rate;
@@ -215,23 +265,7 @@ class MyController:
 
 It can then be passed as `model` to `aquanav.evaluation.run_episode(env, model, seed)`.
 
-## Scope and limitations
 
-The simulator is intended for algorithm prototyping, controlled comparisons,
-and teaching. It is not a validated digital twin of a particular vehicle. It
-does not model heave, roll, pitch, thruster allocation, pressure, detailed
-sonar returns, actuator faults, or acoustic networking. Claims about real AUV
-performance require parameter identification and hardware or high-fidelity
-validation.
-
-## Reproducibility checklist
-
-- keep environment and evaluation seeds in result tables;
-- evaluate the same scenario set for every controller;
-- separate training randomization from the fixed test set;
-- report failed missions instead of removing them;
-- include configuration values and package versions;
-- do not tune a controller on the final test scenarios.
 
 ## License
 
