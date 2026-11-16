@@ -105,122 +105,125 @@ AquaNav-RL/
 
 The inertial pose and body-frame velocity are defined as
 
-$$
+```math
 \boldsymbol{\eta}=[x,y,\psi]^\top,\qquad \boldsymbol{\nu}=[u,v,r]^\top.
-$$
+```
 
-where $x$ and $y$ represent the inertial position, $\psi$ is the heading angle,
-and $u$, $v$, and $r$ denote the surge velocity, sway velocity, and yaw rate,
-respectively. The superscript $\top$ denotes the transpose.
+where $`x`$ and $`y`$ represent the inertial position, $`\psi`$ is the heading angle,
+and $`u`$, $`v`$, and $`r`$ denote the surge velocity, sway velocity, and yaw rate,
+respectively. The superscript $`\top`$ denotes the transpose.
 
 The kinematics are formulated as
 
-$$
+```math
 \dot{\boldsymbol{\eta}}=\mathbf J(\psi)\cdot\boldsymbol{\nu},
-$$
+```
 
-where $\dot{\boldsymbol{\eta}}$ represents the time derivative of the inertial
-pose, and $\mathbf J(\psi)$ is the transformation matrix from body-frame
+where $`\dot{\boldsymbol{\eta}}`$ represents the time derivative of the inertial
+pose, and $`\mathbf J(\psi)`$ is the transformation matrix from body-frame
 velocity to inertial pose rate.
 
 The dynamics are formulated as
 
-$$
+```math
 \mathbf M\cdot\dot{\boldsymbol{\nu}}+\mathbf C(\boldsymbol{\nu}_r)\cdot\boldsymbol{\nu}_r+\mathbf D(\boldsymbol{\nu}_r)\cdot\boldsymbol{\nu}_r=\boldsymbol{\tau}.
-$$
+```
 
-where $\mathbf M$ is the mass and added-mass matrix, $\dot{\boldsymbol{\nu}}$
-represents the body-frame acceleration, $\mathbf C$ is the Coriolis and
-centripetal matrix, and $\mathbf D$ is the damping matrix. The vector
-$\boldsymbol{\nu}_r$ represents the velocity relative to water, while
-$\boldsymbol{\tau}$ denotes the applied forces and yaw moment.
+where $`\mathbf M`$ is the mass and added-mass matrix, $`\dot{\boldsymbol{\nu}}`$
+represents the body-frame acceleration, $`\mathbf C`$ is the Coriolis and
+centripetal matrix, and $`\mathbf D`$ is the damping matrix. The vector
+$`\boldsymbol{\nu}_r`$ represents the velocity relative to water, while
+$`\boldsymbol{\tau}`$ denotes the applied forces and yaw moment.
 
 The velocity relative to water is defined as
 
-$$
-\boldsymbol{\nu}_r=\boldsymbol{\nu}-\begin{bmatrix}\mathbf R^\top(\psi)\cdot\mathbf v_c^n\\0\end{bmatrix}.
-$$
+```math
+\boldsymbol{\nu}_r=\boldsymbol{\nu}-\begin{bmatrix}
+\mathbf R^\top(\psi)\cdot\mathbf v_c^n \\
+0
+\end{bmatrix}.
+```
 
-where $\mathbf v_c^n$ represents the inertial-frame current velocity, and
-$\mathbf R(\psi)$ is the planar rotation matrix from the body frame to the
+where $`\mathbf v_c^n`$ represents the inertial-frame current velocity, and
+$`\mathbf R(\psi)`$ is the planar rotation matrix from the body frame to the
 inertial frame. The zero entry represents the absence of a yaw-rate component
 in the current velocity.
 
-The action $\mathbf a\in[-1,1]^3$ is converted into surge force, sway force,
+The action $`\mathbf a\in[-1,1]^3`$ is converted into surge force, sway force,
 and yaw moment using the configured actuator limits. Nonlinear damping makes
 the response speed-dependent. The state is integrated with fourth-order
-Runge--Kutta at the default interval $\Delta t=0.1$ s.
+Runge--Kutta at the default interval $`\Delta t=0.1`$ s.
 
 ## Current fields
 
-The vortex field centered at $\mathbf c$ is defined as
+The vortex field centered at $`\mathbf c`$ is defined as
 
-$$
+```math
 \mathbf v_c(\mathbf p)=V\cdot\frac{2 \rho R}{\rho^2+R^2}\cdot\frac{[-d_y,d_x]^\top}{\rho}.
-$$
+```
 
-where $\mathbf p$ represents the position, $\mathbf c$ is the vortex center,
-and $\mathbf v_c(\mathbf p)$ denotes the current velocity at that position.
-The parameter $V$ is the nominal current strength, $R$ is the core radius,
-and $\rho$ represents the distance from the vortex center. The terms $d_x$
-and $d_y$ are the components of the displacement vector $\mathbf d$.
+where $`\mathbf p`$ represents the position, $`\mathbf c`$ is the vortex center,
+and $`\mathbf v_c(\mathbf p)`$ denotes the current velocity at that position.
+The parameter $`V`$ is the nominal current strength, $`R`$ is the core radius,
+and $`\rho`$ represents the distance from the vortex center. The terms $`d_x`$
+and $`d_y`$ are the components of the displacement vector $`\mathbf d`$.
 
 The displacement from the vortex center is defined as
 
-$$
+```math
 \mathbf d=\mathbf p-\mathbf c.
-$$
+```
 
-where $\mathbf d$ represents the displacement vector from the vortex center
-$\mathbf c$ to the position $\mathbf p$.
+where $`\mathbf d`$ represents the displacement vector from the vortex center
+$`\mathbf c`$ to the position $`\mathbf p`$.
 
 The distance from the vortex center is defined as
 
-$$
+```math
 \rho=\|\mathbf d\|.
-$$
+```
 
-where $\rho$ represents the radial distance, and $\|\mathbf d\|$ is the
+where $`\rho`$ represents the radial distance, and $`\|\mathbf d\|`$ is the
 Euclidean norm of the displacement vector.
 
 Its velocity approaches zero at the center, reaches its nominal strength near
-the core radius $R$, and decays away from the core. The oscillating field adds
+the core radius $`R`$, and decays away from the core. The oscillating field adds
 time-dependent direction and position-dependent phase, providing a simple
 non-stationary disturbance for robustness experiments.
 
 ## Navigation task
 
-At each time step $t$, the observation vector is defined as
+At each time step $`t`$, the observation vector is defined as
 
-$$
+```math
 \mathbf o_t=\left[\frac{\Delta x}{W},\frac{\Delta y}{W},\cos\psi,\sin\psi,\frac{u}{u_{\max}},\frac{v}{v_{\max}},\frac{r}{r_{\max}},v_{c,x}^b,v_{c,y}^b,\frac{d}{2 W}\right].
-$$
+```
 
-where $\Delta x$ and $\Delta y$ represent the relative position of the goal,
-$W$ is the workspace scale, and $u_{\max}$, $v_{\max}$, and $r_{\max}$ are the
-velocity normalization limits. The terms $v_{c,x}^b$ and $v_{c,y}^b$ denote
-the body-frame current velocity components, while $d$ represents the distance
+where $`\Delta x`$ and $`\Delta y`$ represent the relative position of the goal,
+$`W`$ is the workspace scale, and $`u_{\max}`$, $`v_{\max}`$, and $`r_{\max}`$ are the
+velocity normalization limits. The terms $`v_{c,x}^b`$ and $`v_{c,y}^b`$ denote
+the body-frame current velocity components, while $`d`$ represents the distance
 to the goal.
 
-The heading angle is represented by $\cos\psi$ and $\sin\psi$ to maintain
+The heading angle is represented by $`\cos\psi`$ and $`\sin\psi`$ to maintain
 continuity across the angular boundary. The body-frame current components
 provide information about the disturbance relative to the vehicle orientation.
 
 The reward function is formulated as
 
-$$
+```math
 r_t=w_p\cdot(d_{t-1}-d_t)-w_t-w_e\cdot\|\mathbf a_t\|^2+R_g\cdot\mathbb{I}_{\mathrm{goal}}-R_c\cdot\mathbb{I}_{\mathrm{failure}}.
-$$
+```
 
-where $r_t$ represents the reward at time step $t$, $d_{t-1}$ and $d_t$ are
-the distances to the goal at consecutive time steps, and $\mathbf a_t$ is
-the normalized control action. The parameters $w_p$, $w_t$, and $w_e$ denote
+where $`r_t`$ represents the reward at time step $`t`$, $`d_{t-1}`$ and $`d_t`$ are
+the distances to the goal at consecutive time steps, and $`\mathbf a_t`$ is
+the normalized control action. The parameters $`w_p`$, $`w_t`$, and $`w_e`$ denote
 the progress weight, per-step time penalty, and control-effort penalty weight,
-respectively. The parameter $R_g$ is the goal reward, and $R_c$ is the failure
-penalty. The indicator $\mathbb{I}_{\mathrm{goal}}$ equals one when the goal
-is reached, while $\mathbb{I}_{\mathrm{failure}}$ equals one when a collision
+respectively. The parameter $`R_g`$ is the goal reward, and $`R_c`$ is the failure
+penalty. The indicator $`\mathbb{I}_{\mathrm{goal}}`$ equals one when the goal
+is reached, while $`\mathbb{I}_{\mathrm{failure}}`$ equals one when a collision
 occurs or the vehicle leaves the workspace. Each indicator is zero otherwise,
-and $\|\cdot\|$ denotes the Euclidean norm.
+and $`\|\cdot\|`$ denotes the Euclidean norm.
 
 Progress provides a dense learning signal, while the energy term discourages
 unnecessary thrust. A rollout ends after reaching the goal, colliding, leaving
@@ -232,15 +235,15 @@ The no-current and uniform-current scenarios use independently trained
 Stable-Baselines3 PPO policies with `MlpPolicy`. During deterministic
 evaluation, the normalized control action is formulated as
 
-$$
-\mathbf a_t=\operatorname{clip}\left(\boldsymbol{\mu}_{\theta}(\mathbf o_t),-1,1\right).
-$$
+```math
+\mathbf a_t=\mathrm{clip}\left(\boldsymbol{\mu}_{\theta}(\mathbf o_t),-1,1\right).
+```
 
-where $\mathbf a_t$ represents the normalized surge, sway, and yaw control
-action, $\mathbf o_t$ is the observation vector, and $\boldsymbol{\mu}_{\theta}$
-denotes the mean action of the PPO policy with learned parameters $\theta$.
-The function $\operatorname{clip}(\cdot,-1,1)$ limits each action component
-to the interval $[-1,1]$.
+where $`\mathbf a_t`$ represents the normalized surge, sway, and yaw control
+action, $`\mathbf o_t`$ is the observation vector, and $`\boldsymbol{\mu}_{\theta}`$
+denotes the mean action of the PPO policy with learned parameters $`\theta`$.
+The function $`\mathrm{clip}(\cdot,-1,1)`$ limits each action component
+to the interval $`[-1,1]`$.
 
 Evaluation uses the saved `best_model.zip` checkpoint by default and applies
 deterministic actions to held-out episode seeds. New algorithms should be
